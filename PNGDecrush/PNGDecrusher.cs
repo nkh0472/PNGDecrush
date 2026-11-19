@@ -1,4 +1,3 @@
-﻿using Ionic.Zlib;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
@@ -135,12 +134,22 @@ namespace PNGDecrush
 
         private static byte[] ConvertDeflateToZlib(byte[] input)
         {
+            // Was Ionic.Zlib.ZlibStream (DotNetZip, unmaintained since 2011).
+            // SharpZipLib's DeflaterOutputStream is a full RFC1950 (zlib) wrapper:
+            // writes the 2-byte zlib header on first Write and the Adler-32 trailer on Finish().
+            // Level 9 matches DotNetZip's former default (BestCompression) bit-for-bit in intent.
             using (MemoryStream deflateData = new MemoryStream(input))
             using (System.IO.Compression.DeflateStream deflateStream = new System.IO.Compression.DeflateStream(deflateData, System.IO.Compression.CompressionMode.Decompress))
-            using (ZlibStream zlibStream = new ZlibStream(deflateStream, Ionic.Zlib.CompressionMode.Compress))
             using (MemoryStream zlibData = new MemoryStream())
             {
-                zlibStream.CopyTo(zlibData);
+                ICSharpCode.SharpZipLib.Zip.Compression.Deflater deflater =
+                    new ICSharpCode.SharpZipLib.Zip.Compression.Deflater(9);
+                using (ICSharpCode.SharpZipLib.Zip.Compression.Streams.DeflaterOutputStream zlibStream =
+                    new ICSharpCode.SharpZipLib.Zip.Compression.Streams.DeflaterOutputStream(zlibData, deflater))
+                {
+                    deflateStream.CopyTo(zlibStream);
+                    zlibStream.Finish();
+                }
                 return zlibData.ToArray();
             }
         }
@@ -154,11 +163,12 @@ namespace PNGDecrush
         {
             byte[] chunkTypeBytes = Encoding.UTF8.GetBytes(chunkType);
 
-            Ionic.Crc.CRC32 crc32calculator = new Ionic.Crc.CRC32();
-            crc32calculator.SlurpBlock(chunkTypeBytes, 0, chunkTypeBytes.Length);
-            crc32calculator.SlurpBlock(chunkData, 0, chunkData.Length);
+            // SharpZipLib CRC32 (was Ionic.Crc.CRC32) — same standard PNG CRC-32.
+            ICSharpCode.SharpZipLib.Checksum.Crc32 crc32calculator = new ICSharpCode.SharpZipLib.Checksum.Crc32();
+            crc32calculator.Update(chunkTypeBytes);
+            crc32calculator.Update(chunkData);
 
-            return (uint)crc32calculator.Crc32Result;
+            return (uint)crc32calculator.Value;
         }
 
         public static void DecrushAtPixelLevel(Stream pngInputStream, Stream outputStream)
