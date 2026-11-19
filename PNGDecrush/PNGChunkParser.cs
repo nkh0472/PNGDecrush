@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
@@ -41,6 +41,13 @@ namespace PNGDecrush
 
             uint length = reader.ReadUInt32NetworkByteOrder();
             string type = Encoding.UTF8.GetString(reader.ReadBytes(4));
+            // A crafted chunk header may declare up to 4 GB; the (int) cast overflows to
+            // negative (ReadBytes throws) or allocates a huge buffer in the caller's process.
+            // Real PNG chunks are far smaller than 128 MB — reject absurd lengths outright.
+            if (length > 128u * 1024u * 1024u)
+            {
+                throw new InvalidDataException("PNG chunk '" + type + "' declares implausible length " + length);
+            }
             byte[] data = reader.ReadBytes((int)length);
             uint crc = reader.ReadUInt32NetworkByteOrder();
 
